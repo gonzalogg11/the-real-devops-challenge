@@ -13,7 +13,7 @@ class MongoJSONEncoder(JSONEncoder):
         if isinstance(o, ObjectId):
             return str(o)
         else:
-            return super().default(o)
+            return super(self).default(o)
 
 
 class ObjectIdConverter(BaseConverter):
@@ -22,6 +22,7 @@ class ObjectIdConverter(BaseConverter):
 
     def to_url(self, value):
         return str(value)
+
 
 def find_restaurants(mongo, _id=None):
     query = {}
