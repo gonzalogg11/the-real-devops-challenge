@@ -1,3 +1,4 @@
+import httplib
 from os import environ
 
 from bson import json_util
@@ -23,7 +24,9 @@ def restaurants():
 @app.route("/api/v1/restaurant/<id>")
 def restaurant(id):
     restaurants = find_restaurants(mongo, id)
-    return jsonify(restaurants)
+    if restaurants:
+        return restaurant[0]
+    return '', httplib.NO_CONTENT
 
 
 if __name__ == "__main__":

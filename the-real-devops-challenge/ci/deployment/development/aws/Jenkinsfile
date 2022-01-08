@@ -1,0 +1,90 @@
+pipeline {
+
+    options {
+        buildDiscarder(logRotator(daysToKeepStr: '5', artifactNumToKeepStr: '10'))
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        service_name = 'devops-challenge'
+        version = 'latest'
+        docker_base_image = "test/$service_name"
+        docker_latest_image_name = "$docker_base_image:$version"
+        docker_build_image_name = "test/$service_name:$JOB_NAME.$BUILD_NUMBER"
+        docker_registry_url = "url"
+        docker_registry_full_url = "https://$docker_registry_url"
+        docker_registry_credentials = "ecr:eu-west-1:devops_aws_credentials"
+        AWS_DEFAULT_REGION = "eu-west-1"
+    }
+
+    stages {
+        stage('Test Coverage') {
+            steps {
+                sh '''
+                    pip install tox
+                    tox
+                '''
+
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'docker build --tag python-docker'
+            }
+        }
+
+        stage('Scan Docker Image') {
+            steps {
+                sh 'trivy $docker_base_image'
+            }
+        }
+
+        stage('Push Image') {
+            steps {
+                sh 'docker image tag $docker_latest_image_name $docker_build_image_name'
+                script {
+                    docker.withRegistry(docker_registry_full_url, docker_registry_credentials) {
+                        docker.image(docker_latest_image_name).push()
+                        docker.image(docker_build_image_name).push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Development') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'jenkins-admin', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) {
+                    sh '''
+                        aws eks update-kubeconfig --name development
+                        kubectl apply -f ./ci/deployment/development/aws/Deployment.yml
+                        kubectl apply -f ./ci/deployment/development/aws/$service_name-service.yaml
+                        kubectl apply -f ./ci/deployment/development/aws/$service_name-ingress.yaml
+                        kubectl set image deployment/$service_name $service_name=$docker_registry_url/$docker_build_image_name
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            deleteDir()
+        }
+        success {
+            echo 'I succeeded!'
+        }
+        unstable {
+            echo 'I am unstable :/'
+        }
+        failure {
+            echo 'I failed :('
+        }
+        changed {
+            echo 'Things were different before...'
+        }
+    }
+
+}
+
+
